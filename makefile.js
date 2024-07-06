@@ -29,14 +29,14 @@ for (var i = 0; i < files.length; i++) {
 }
 
 var bits = os.arch() === "x64" ? 64 : 32; // Add your architecture here!
-var flags = ["-Wall", "-Wextra", "-Werror", "-g3", "-std=c99"];
+var flags = ["-Wall", "-Wextra", "-g3", "-std=c99"];
 var end_flags = [], fincc_flags = [];
 
 // flags.push.apply(flags, "-I/usr/include/SDL -D_GNU_SOURCE=1
 // -D_REENTRANT".split(" "));
 // flags.push.apply(flags, "-L/usr/lib/x86_64-linux-gnu -lSDL -lSDLmain".split("
 // "));
-end_flags = "-lSDL -lSDLmain -lm -lz".split(" ");
+end_flags = "-lSDL2 -lm -lz".split(" ");
 
 if (os.endianness() === "BE") {
     console.warn("WARNING: This emulator has not been tested on big-endian platforms and may not work.");
@@ -158,6 +158,9 @@ for (var i = 0; i < argv.length; i++) {
             break;
         case "--disable-debug":
             flags.splice(flags.indexOf("-g3"), 1);
+            break;
+        case "--disable-logging":
+            flags.push("-DLOGGING_DISABLED");
             break;
         case "--help":
             console.log("Actions:");

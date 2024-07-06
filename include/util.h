@@ -15,7 +15,7 @@
 void* aalloc(int size, int align);
 void afree(void* ptr);
 
-//#define LOGGING_DISABLED
+#define LOGGING_DISABLED
 
 #ifdef EMSCRIPTEN
 //#if 0

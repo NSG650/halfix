@@ -8,16 +8,8 @@
 #include "display.h"
 #include "devices.h"
 #include "util.h"
-#include <SDL/SDL.h>
+#include <SDL2/SDL.h>
 #include <stdlib.h>
-
-#ifdef EMSCRIPTEN
-#include <emscripten.h>
-
-// These are two functions that can be more efficiently offered in native JavaScript.
-void emscripten_handle_resize(void* framebuffer, int w, int h);
-void emscripten_flip(void);
-#endif
 
 #define DISPLAY_LOG(x, ...) LOG("DISPLAY", x, ##__VA_ARGS__)
 #define DISPLAY_FATAL(x, ...)          \
@@ -27,18 +19,11 @@ void emscripten_flip(void);
     } while (0)
 
 static SDL_Surface* surface = NULL;
-#ifndef EMSCRIPTEN
-static SDL_Surface* screen = NULL;
-static void* surface_pixels;
-#endif
+static SDL_Window *window = NULL;
 
 void* display_get_pixels(void)
 {
-#ifdef EMSCRIPTEN
     return surface->pixels;
-#else
-    return surface_pixels;
-#endif
 }
 
 static int h, w, mouse_enabled = 0, mhz_rating = -1;
@@ -51,7 +36,7 @@ static void display_set_title(void)
                     " [%d x %d] - %s",
         w, h,
         mouse_enabled ? "Press ESC to release mouse" : "Right-click to capture mouse");
-    SDL_WM_SetCaption(buffer, "Halfix");
+    SDL_SetWindowTitle(window, buffer);
 }
 
 void display_update_cycles(int cycles_elapsed, int us)
@@ -70,36 +55,13 @@ void display_set_resolution(int width, int height)
         return;
     }
     DISPLAY_LOG("Changed resolution to w=%d h=%d\n", width, height);
-#ifdef EMSCRIPTEN
-    // SetVideoMode already works, no need to play around with that:
-    // https://jamesfriend.com.au/working-implementation-sdlcreatergbsurfacefrom-emscripten
-    surface = SDL_SetVideoMode(width, height, 32, SDL_SWSURFACE);
-#else
 
-    if (surface_pixels)
-        free(surface_pixels);
-    surface_pixels = malloc(width * height * 4);
+    SDL_SetWindowSize(window, width, height);
+    surface = SDL_GetWindowSurface(window);
 
-    if (surface)
-        SDL_FreeSurface(surface);
-    if (screen)
-        SDL_FreeSurface(screen);
-
-    screen = SDL_SetVideoMode(width, height, 32, SDL_SWSURFACE);
-    surface = SDL_CreateRGBSurfaceFrom(surface_pixels, width, height, 32,
-        width * 4, // pitch -- number of bytes per row
-        0x00ff0000, // red
-        0x0000ff00, // green
-        0x000000ff, // blue
-        0xff000000); // alpha
-#endif
     w = width;
     h = height;
     display_set_title();
-
-#ifdef EMSCRIPTEN
-    emscripten_handle_resize(surface->pixels, width, height);
-#endif
 }
 
 void display_update(int scanline_start, int scanlines)
@@ -112,20 +74,8 @@ void display_update(int scanline_start, int scanlines)
         printf("%d x %d [%d %d]\n", w, h, scanline_start, scanlines);
         ABORT();
     } else {
-//printf("Updating %d scanlines starting from %d\n", scanlines, scanline_start);
-#ifndef EMSCRIPTEN
-        SDL_Rect rect;
-        rect.x = 0;
-        rect.y = 0;
-        rect.w = w;
-        rect.h = h;
-        //__asm__("int3");
-        SDL_BlitSurface(surface, &rect, screen, &rect);
-        SDL_Flip(screen);
-#else
-        emscripten_flip();
-#endif
-        //SDL_UpdateRect(surface, 0, scanline_start, w, scanlines);
+        surface = SDL_GetWindowSurface(window);
+        SDL_UpdateWindowSurface(window);
     }
 }
 
@@ -133,8 +83,7 @@ static int input_captured = 0;
 static void display_mouse_capture_update(int y)
 {
     input_captured = y;
-    SDL_WM_GrabInput(y);
-    SDL_ShowCursor(SDL_TRUE ^ y);
+    SDL_SetRelativeMouseMode(SDL_TRUE);
     mouse_enabled = y;
     display_set_title();
 }
@@ -347,9 +296,6 @@ void display_handle_events(void)
 }
 
 // Send the CTRL+ALT+DEL sequence to the emulator
-#ifdef EMSCRIPTEN
-EMSCRIPTEN_KEEPALIVE
-#endif
 void display_send_ctrl_alt_del(int down)
 {
     down = down ? 0 : 0x80;
@@ -358,9 +304,6 @@ void display_send_ctrl_alt_del(int down)
     display_kbd_send_key(0xE053 | down); // DEL
 }
 
-#ifdef EMSCRIPTEN
-EMSCRIPTEN_KEEPALIVE
-#endif
 void display_send_scancode(int key)
 {
     display_kbd_send_key(key);
@@ -371,17 +314,18 @@ void display_init(void)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_NOPARACHUTE))
         DISPLAY_FATAL("Unable to initialize SDL");
 
-    display_set_title();
-    display_set_resolution(640, 480);
+    window = SDL_CreateWindow("Fixing Fit",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        640, 480,
+        0);
 
-#ifndef EMSCRIPTEN
-    screen = SDL_SetVideoMode(640, 400, 32, SDL_SWSURFACE);
-#endif
+    // display_set_title();
+    // display_set_resolution(640, 480);
+
+    surface = SDL_GetWindowSurface(window);
+    SDL_UpdateWindowSurface(window);
 
     resized = 0;
-#ifdef EMSCRIPTEN
-    display_mouse_capture_update(1);
-#endif
 }
 void display_sleep(int ms)
 {
